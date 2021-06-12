@@ -100,16 +100,37 @@ func main() {
 	hcloudClient := hcloud.NewClient(opts...)
 
 	hcloudServerID := getServerID(hcloudClient)
-	level.Debug(logger).Log("msg", "fetching server")
-	server, _, err := hcloudClient.Server.GetByID(context.Background(), hcloudServerID)
-	if err != nil {
-		level.Error(logger).Log(
-			"msg", "failed to fetch server",
-			"err", err,
-		)
-		os.Exit(1)
+
+	var location string
+	var server *hcloud.Server
+
+	if hcloudServerID > -1 {
+		level.Debug(logger).Log("msg", "fetching server")
+		hcloudServer, _, err := hcloudClient.Server.GetByID(context.Background(), hcloudServerID)
+		if err != nil {
+			level.Error(logger).Log(
+				"msg", "failed to fetch server",
+				"err", err,
+			)
+			os.Exit(1)
+		}
+		level.Info(logger).Log("msg", "fetched server", "server-name", hcloudServer.Name)
+
+		location = hcloudServer.Datacenter.Location.Name
+		server = hcloudServer
+	} else {
+		level.Info(logger).Log("msg", "no server configured to attach volumes to")
+
+		s := os.Getenv("HCLOUD_LOCATION_NAME")
+		if s == "" {
+			level.Error(logger).Log(
+				"msg", "no location in HCLOUD_LOCATION_NAME env var",
+			)
+			os.Exit(2)
+		}
+
+		location = s
 	}
-	level.Info(logger).Log("msg", "fetched server", "server-name", server.Name)
 
 	volumeService := volumes.NewIdempotentService(
 		log.With(logger, "component", "idempotent-volume-service"),
@@ -130,19 +151,23 @@ func main() {
 	controllerService := driver.NewControllerService(
 		log.With(logger, "component", "driver-controller-service"),
 		volumeService,
-		server.Datacenter.Location.Name,
+		location,
 	)
 	identityService := driver.NewIdentityService(
 		log.With(logger, "component", "driver-identity-service"),
 	)
-	nodeService := driver.NewNodeService(
-		log.With(logger, "component", "driver-node-service"),
-		server,
-		volumeService,
-		volumeMountService,
-		volumeResizeService,
-		volumeStatsService,
-	)
+
+	var nodeService *driver.NodeService
+	if nil != server {
+		nodeService = driver.NewNodeService(
+			log.With(logger, "component", "driver-node-service"),
+			server,
+			volumeService,
+			volumeMountService,
+			volumeResizeService,
+			volumeStatsService,
+		)
+	}
 
 	listener, err := net.Listen("unix", endpoint)
 	if err != nil {
@@ -175,7 +200,10 @@ func main() {
 
 	proto.RegisterControllerServer(grpcServer, controllerService)
 	proto.RegisterIdentityServer(grpcServer, identityService)
-	proto.RegisterNodeServer(grpcServer, nodeService)
+
+	if nil != nodeService {
+		proto.RegisterNodeServer(grpcServer, nodeService)
+	}
 
 	metrics.InitializeMetrics(grpcServer)
 	metrics.Serve()
@@ -192,8 +220,11 @@ func main() {
 }
 
 func getServerID(hcloudClient *hcloud.Client) int {
+	var err error
+	id := -1
+
 	if s := os.Getenv("HCLOUD_SERVER_ID"); s != "" {
-		id, err := strconv.Atoi(s)
+		id, err = strconv.Atoi(s)
 		if err != nil {
 			level.Error(logger).Log(
 				"msg", "invalid server id in HCLOUD_SERVER_ID env var",
@@ -232,14 +263,14 @@ func getServerID(hcloudClient *hcloud.Client) int {
 	level.Debug(logger).Log(
 		"msg", "getting instance id from metadata service",
 	)
-	id, err := getInstanceID()
+	id, err = getInstanceID()
 	if err != nil {
-		level.Error(logger).Log(
+		level.Info(logger).Log(
 			"msg", "failed to get instance id from metadata service",
 			"err", err,
 		)
-		os.Exit(1)
 	}
+
 	return id
 }
 

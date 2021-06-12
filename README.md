@@ -76,11 +76,17 @@ enabling you to use ReadWriteOnce Volumes within Kubernetes. Please note that th
 
 ## Integration with Root Servers
 
-Root servers can be part of the cluster, but the CSI plugin doesn't work there. Taint the root server as follows to skip that node for the daemonset.
+Root servers can be part of the cluster, but the CSI plugin functionality
+is limited there.
+
+Taint the root server as follows to skip that node for the daemonset.
 
 ```bash
 kubectl taint node <node name> instance.hetzner.cloud/is-root-server:true
 ```
+
+Alternatively you may set `HCLOUD_LOCATION_NAME` for the daemonset for the
+CSI plugin to attach volumes to supported containers.
 
 ## Versioning policy
 
