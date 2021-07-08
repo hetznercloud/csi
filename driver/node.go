@@ -318,9 +318,12 @@ func (s *NodeService) NodeExpandVolume(ctx context.Context, req *proto.NodeExpan
 		return nil, status.Error(codes.Unavailable, fmt.Sprintf("volume %s is not available on this node %v", volume.LinuxDevice, s.server.ID))
 	}
 
-	if err := s.volumeResizeService.Resize(volume, req.VolumePath); err != nil {
-		return nil, status.Error(codes.Internal, fmt.Sprintf("failed to resize volume: %s", err))
+	if req.VolumeCapability.GetBlock() == nil {
+		if err := s.volumeResizeService.Resize(volume, req.VolumePath); err != nil {
+			return nil, status.Error(codes.Internal, fmt.Sprintf("failed to resize volume: %s", err))
+		}
 	}
+
 	resp := &proto.NodeExpandVolumeResponse{
 		CapacityBytes: volume.SizeBytes(),
 	}

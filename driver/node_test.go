@@ -866,6 +866,45 @@ func TestNodeServiceNodeExpandVolume(t *testing.T) {
 	}
 }
 
+func TestNodeServiceNodeExpandBlockVolume(t *testing.T) {
+	env := newNodeServerTestEnv()
+
+	existingVolume := &csi.Volume{
+		LinuxDevice: "LinuxDevicePath",
+	}
+
+	env.volumeService.GetByIDFunc = func(ctx context.Context, id uint64) (*csi.Volume, error) {
+		if id != 1 {
+			t.Errorf("unexpected volume id passed to volume service: %d", id)
+		}
+		return existingVolume, nil
+	}
+	env.volumeMountService.PathExistsFunc = func(path string) (bool, error) {
+		if path != "LinuxDevicePath" {
+			t.Errorf("unexpected volume path passed to volume mount service: %s", path)
+		}
+		return true, nil
+	}
+	env.volumeResizeService.ResizeFunc = func(volume *csi.Volume, volumePath string) error {
+			t.Errorf("This function should never be called.")
+		return nil
+	}
+
+	_, err := env.service.NodeExpandVolume(env.ctx, &proto.NodeExpandVolumeRequest{
+		VolumeId:   "1",
+		VolumePath: "volumePath",
+		VolumeCapability: &proto.VolumeCapability{
+			AccessMode: &proto.VolumeCapability_AccessMode{
+				Mode: proto.VolumeCapability_AccessMode_SINGLE_NODE_WRITER,
+			},
+			AccessType: &proto.VolumeCapability_Block{Block: &proto.VolumeCapability_BlockVolume{}},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestNodeServiceNodeNodeExpandVolumeNotFound(t *testing.T) {
 	env := newNodeServerTestEnv()
 
